@@ -13,22 +13,7 @@ func main() {
 	executable, _ := os.Executable()
 	programName := filepath.Base(executable)
 	programDirPath := filepath.Dir(executable)
-	programDir, err := os.Open(programDirPath)
-	if err != nil {
-		fmt.Printf("%s\n", err)
-		fmt.Printf("Usage: %s <thtml-file>\n", programName)
-		os.Exit(-1)
-	}
-	programDirInfo, err := programDir.Stat()
-	programDir.Close()
-	if err != nil {
-		fmt.Printf("%s\n", err)
-		fmt.Printf("Usage: %s <thtml-file>\n", programName)
-		os.Exit(-1)
-	}
-	if !programDirInfo.IsDir() {
-		panic("dir of executable is not a dir")
-	}
+	checkProgramDirValid(programDirPath)
 	if len(os.Args) < 2 {
 		fmt.Printf("Not enough arguments\n")
 		fmt.Printf("Usage: %s <thtml-file>\n", programName)
@@ -46,39 +31,20 @@ func main() {
 		fmt.Printf("Usage: %s <thtml-file>\n", programName)
 		os.Exit(-1)
 	}
-	var sf *os.File
-	sf, err = os.Open(thtmlFile)
-	useProgramDir := false
-	if err != nil {
-		var errRetry error
-		sf, errRetry = os.Open(filepath.Join(programDirPath, filepath.Base(thtmlFile)))
-		if errRetry == nil {
-			useProgramDir = true
-			err = nil
-		}
-	}
+	sourceFilePath, targetFilePath, err := getFilePaths(err, thtmlFile, programDirPath, programName, outputHtmlFile)
 	if err != nil {
 		fmt.Printf("%s\n", err)
 		fmt.Printf("Usage: %s <thtml-file>\n", programName)
 		os.Exit(-1)
 	}
-	sf.Close()
-	targetFilePath := outputHtmlFile
-	if useProgramDir {
-		targetFilePath = filepath.Join(programDirPath, filepath.Base(outputHtmlFile))
-	}
+	sourceContent, err := ioutil.ReadFile(sourceFilePath)
+	targetContent := convertHtml(string(sourceContent))
 	targetFile, err := os.Create(targetFilePath)
 	if err != nil {
 		fmt.Printf("%s\n", err)
 		fmt.Printf("Usage: %s <thtml-file>\n", programName)
 		os.Exit(-1)
 	}
-	sourceFilePath := thtmlFile
-	if useProgramDir {
-		sourceFilePath = filepath.Join(programDirPath, filepath.Base(thtmlFile))
-	}
-	sourceContent, err := ioutil.ReadFile(sourceFilePath)
-	targetContent := convertHtml(string(sourceContent))
 	_, err = targetFile.WriteString(targetContent)
 	if err != nil {
 		fmt.Printf("%s\n", err)
@@ -89,8 +55,19 @@ func main() {
 	fmt.Printf("%s: %d bytes written\n", targetFilePath, len(targetContent))
 }
 
-func convertHtml(sourceContent string) string {
-	return strings.ReplaceAll(sourceContent, "h1>", "h2>")
+func checkProgramDirValid(programDirPath string) {
+	programDir, err := os.Open(programDirPath)
+	if err != nil {
+		panic("dir of executable cannot be opened to read")
+	}
+	programDirInfo, err := programDir.Stat()
+	defer programDir.Close()
+	if err != nil {
+		panic("dir of executable cannot be read")
+	}
+	if !programDirInfo.IsDir() {
+		panic("dir of executable is not a dir")
+	}
 }
 
 func getFilenameAsHtmlFile(thtmlFile string) (string, error) {
@@ -99,4 +76,35 @@ func getFilenameAsHtmlFile(thtmlFile string) (string, error) {
 		return "", errors.New("not a .html filename")
 	}
 	return thtmlFile[:lastIndexForEnding] + ".html", nil
+}
+
+func getFilePaths(err error, thtmlFile string, programDirPath string, programName string, outputHtmlFile string) (string, string, error) {
+	useProgramDir := false
+	var sf *os.File
+	sf, err = os.Open(thtmlFile)
+	if err != nil {
+		var errRetry error
+		sf, errRetry = os.Open(filepath.Join(programDirPath, filepath.Base(thtmlFile)))
+		if errRetry == nil {
+			useProgramDir = true
+			err = nil
+		}
+	}
+	if err != nil {
+		return "", "", err
+	}
+	sf.Close()
+	sourceFilePath := thtmlFile
+	if useProgramDir {
+		sourceFilePath = filepath.Join(programDirPath, filepath.Base(thtmlFile))
+	}
+	targetFilePath := outputHtmlFile
+	if useProgramDir {
+		targetFilePath = filepath.Join(programDirPath, filepath.Base(outputHtmlFile))
+	}
+	return sourceFilePath, targetFilePath, nil
+}
+
+func convertHtml(sourceContent string) string {
+	return strings.ReplaceAll(sourceContent, "h1>", "h2>")
 }
